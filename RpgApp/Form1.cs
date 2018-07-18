@@ -55,26 +55,14 @@ namespace RpgApp
 
         }
 
+
+
         private void MoveTo(Location newLocation)
         {
-            if (newLocation.ItemRequiredToEnter != null)
+            if (!player.HasRequiredItemToEnterThisLocation(newLocation))
             {
-                bool playerHasRequiredItem = false;
-
-                foreach (InventoryItem ii in player.Inventory)
-                {
-                    if (ii.Details.ID == newLocation.ItemRequiredToEnter.ID)
-                    {
-                        playerHasRequiredItem = true;
-                        break;
-                    }
-                }
-
-                if (!playerHasRequiredItem)
-                {
-                    rtbMessages.Text += $@"You must have a { newLocation.ItemRequiredToEnter.Name } to enter this location." + Environment.NewLine;
-                    return;
-                }
+                rtbMessages.Text += $@"You must have a { newLocation.ItemRequiredToEnter.Name } to enter this location." + Environment.NewLine;
+                return;
             }
 
             player.CurrentLocation = newLocation;
@@ -93,72 +81,24 @@ namespace RpgApp
 
             if (newLocation.QuestAvailableHere != null)
             {
-                bool playerAlreadyHasQuest = false;
-                bool playerAlreadyCompletedQuest = false;
-
-                foreach (PlayerQuest playerQuest in player.Quests)
-                {
-                    if (playerQuest.Details.ID == newLocation.QuestAvailableHere.ID)
-                    {
-                        playerAlreadyHasQuest = true;
-
-                        if (playerQuest.IsCompleted)
-                        {
-                            playerAlreadyCompletedQuest = true;
-                        }
-                    }
-                }
-
+                bool playerAlreadyHasQuest = player.HasThisQuest(newLocation.QuestAvailableHere);
+                bool playerAlreadyCompletedQuest = player.CompletedThisQuest(newLocation.QuestAvailableHere);
+                
 
                 if (playerAlreadyHasQuest)
                 {
                     if (!playerAlreadyCompletedQuest)
                     {
-                        bool playerHasAllItemsToCompleteQuest = true;
+                        bool playerHasAllItemsToCompleteQuest = player.HasAllQuestCompletionItems(newLocation.QuestAvailableHere);
 
-                        foreach (QuestCompletionItem qci in newLocation.QuestAvailableHere.QuestCompletionItems)
-                        {
-                            bool foundItemInPlayersInventory = false;
-
-                            foreach (InventoryItem ii in player.Inventory)
-                            {
-                                if (ii.Details.ID == qci.Details.ID)
-                                {
-                                    foundItemInPlayersInventory = true;
-
-                                    if (ii.Quantity < qci.Quantity)
-                                    {
-                                        playerHasAllItemsToCompleteQuest = false;
-                                        break;
-                                    }
-                                    break;
-                                }
-                            }
-
-                            if (!foundItemInPlayersInventory)
-                            {
-                                playerHasAllItemsToCompleteQuest = false;
-
-                                break;
-                            }
-                        }
+                      
 
                         if (playerHasAllItemsToCompleteQuest)
                         {
                             rtbMessages.Text += Environment.NewLine;
                             rtbMessages.Text += $@"You complete the { newLocation.QuestAvailableHere.Name } quest" + Environment.NewLine;
 
-                            foreach (QuestCompletionItem qci in newLocation.QuestAvailableHere.QuestCompletionItems)
-                            {
-                                foreach (InventoryItem ii in player.Inventory)
-                                {
-                                    if (ii.Details.ID == qci.Details.ID)
-                                    {
-                                        ii.Quantity -= qci.Quantity;
-                                        break;
-                                    }
-                                }
-                            }
+                            player.RemoveQuestCompletionItems(newLocation.QuestAvailableHere);
 
                             rtbMessages.Text += "You receive: " + Environment.NewLine;
                             rtbMessages.Text += $@"{ newLocation.QuestAvailableHere.RewardExperiencePoints.ToString() } experience points" + Environment.NewLine;
@@ -186,14 +126,7 @@ namespace RpgApp
                                 player.Inventory.Add(new InventoryItem(newLocation.QuestAvailableHere.RewardItem, 1));
                             }
 
-                            foreach (PlayerQuest pq in player.Quests)
-                            {
-                                if (pq.Details.ID == newLocation.QuestAvailableHere.ID)
-                                {
-                                    pq.IsCompleted = true;
-                                    break;
-                                }
-                            }
+                            player.MarkQuestCompleted(newLocation.QuestAvailableHere);
                         }
                     }
                 }
@@ -249,26 +182,41 @@ namespace RpgApp
                 btnUsePotion.Visible = false;
             }
 
+
+
+            UpdateInventoryListInUI();
+            UpdateQuestListInUI();
+            UpdateWeaponListInUI();
+            UpdatePotionListUI();      
+        }
+
+
+        private void UpdateInventoryListInUI()
+        {
             dgvInventory.RowHeadersVisible = false;
+
             dgvInventory.ColumnCount = 2;
             dgvInventory.Columns[0].Name = "Name";
             dgvInventory.Columns[0].Width = 197;
-            dgvInventory.Columns[1].Name = "Quantity";
+            dgvInventory.Columns[1].Name = "Quantity?";
 
             dgvInventory.Rows.Clear();
 
-            foreach(InventoryItem inventoryItem in player.Inventory)
+            foreach (InventoryItem ii in player.Inventory)
             {
-                if (inventoryItem.Quantity > 0)
+                if (ii.Quantity > 0)
                 {
                     dgvInventory.Rows.Add(new[]
                     {
-                        inventoryItem.Details.Name,
-                        inventoryItem.Quantity.ToString()
-                    });
+                    ii.Details.Name,
+                    ii.Quantity.ToString()
+                });
                 }
             }
+        }
 
+        private void UpdateQuestListInUI()
+        {
             dgvQuests.RowHeadersVisible = false;
 
             dgvQuests.ColumnCount = 2;
@@ -278,7 +226,7 @@ namespace RpgApp
 
             dgvQuests.Rows.Clear();
 
-            foreach(PlayerQuest playerQuest in player.Quests)
+            foreach (PlayerQuest playerQuest in player.Quests)
             {
                 dgvQuests.Rows.Add(new[]
                 {
@@ -286,10 +234,13 @@ namespace RpgApp
                     playerQuest.IsCompleted.ToString()
                 });
             }
+        }
 
+        private void UpdateWeaponListInUI()
+        {
             List<Weapon> weapons = new List<Weapon>();
 
-            foreach(InventoryItem inventoryItem in player.Inventory)
+            foreach (InventoryItem inventoryItem in player.Inventory)
             {
                 if (inventoryItem.Details is Weapon)
                 {
@@ -313,10 +264,13 @@ namespace RpgApp
 
                 cboWeapons.SelectedIndex = 0;
             }
+        }
 
+        public void UpdatePotionListUI()
+        {
             List<HealingPotion> healingPotions = new List<HealingPotion>();
 
-            foreach(InventoryItem inventoryItem in player.Inventory)
+            foreach (InventoryItem inventoryItem in player.Inventory)
             {
                 if (inventoryItem.Details is HealingPotion)
                 {
@@ -343,10 +297,11 @@ namespace RpgApp
         }
 
 
-
         private void btnUseWeapon_Click(object sender, EventArgs e)
         {
+            Weapon currentWeapon = (Weapon)cboWeapons.SelectedItem;
 
+            int damageToMonster = RandomNumberGenerator.NumberBetween(currentWeapon.MinimumDamage, currentWeapon.MaximumDamage);
         }
 
         private void btnUsePotion_Click(object sender, EventArgs e)
